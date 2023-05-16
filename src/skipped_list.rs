@@ -1,7 +1,8 @@
-use std::cmp::Ordering;
-use std::time;
 use rand::Rng;
 use skiplist::OrderedSkipList;
+use std::cmp::Ordering;
+use std::collections::Bound;
+use std::time;
 use uuid::Uuid;
 
 pub struct PlayerScore {
@@ -27,8 +28,6 @@ impl PartialOrd for PlayerScore {
     }
 }
 
-
-
 pub fn find_matching_player(
     queue: &OrderedSkipList<PlayerScore>,
     player_index: usize,
@@ -39,41 +38,29 @@ pub fn find_matching_player(
     }
     let selected_player = selected_player.unwrap();
 
-    let mut opponent: Option<&PlayerScore> = None;
-    let threshold = std::env::var("THRESHOLD").unwrap_or(String::from("500")).parse::<i32>().unwrap();
-    let max_diff_index = std::env::var("MAX_DIFF_INDEX").unwrap_or(String::from("10")).parse::<usize>().unwrap();
-    for i in 1..max_diff_index {
-        if player_index >= i {
-            let first_player = queue.get(player_index - i);
-            if let Some(first_player) = first_player {
-                if (first_player.score - selected_player.score).abs() <= threshold {
-                    opponent = Some(first_player);
-                    break;
-                }
-            }
-        }
+    let threshold = std::env::var("THRESHOLD")
+        .unwrap_or(String::from("500"))
+        .parse::<i32>()
+        .unwrap();
 
-        let second_player = queue.get(player_index + i);
-        if let Some(second_player) = second_player {
-            if (second_player.score - selected_player.score).abs() <= threshold {
-                opponent = Some(second_player);
-                break;
-            }
-        }
+    let lower_bound = PlayerScore::new(String::new(), selected_player.score - threshold);
+    let upper_bound= PlayerScore::new(String::new(), selected_player.score + threshold);
+    for player in queue.range(Bound::Included(&lower_bound), Bound::Included(&upper_bound)) {
+        return Some(player)
     }
-    return opponent;
+    return None;
 }
 
 pub fn construct_queue(number_of_players: usize) -> OrderedSkipList<PlayerScore> {
     let mut ordered_skip_list: OrderedSkipList<PlayerScore> = OrderedSkipList::new();
     let mut rng = rand::thread_rng();
-    let max_score = 20_000;
+    let max_score = std::env::var("MAX_SCORE").unwrap_or(String::from("100000")).parse::<u32>().unwrap();
     for _ in 1..number_of_players {
         let score = rng.gen::<u32>() % max_score;
         let user_id = Uuid::new_v4().to_string();
-        ordered_skip_list.insert(PlayerScore::new(user_id, score as i32))
+        ordered_skip_list.insert(PlayerScore::new(user_id, score as i32));
     }
-    return ordered_skip_list
+    return ordered_skip_list;
 }
 
 pub fn measure_time() -> u128 {
@@ -84,19 +71,9 @@ pub fn measure_time() -> u128 {
     let mut rng = rand::thread_rng();
 
     let begin = time::Instant::now();
-    let mut found_matches = 0;
     for _ in 1..number_of_matches + 1 {
         let random_player_index = rng.gen::<usize>() % number_of_players as usize;
-        if find_matching_player(&ordered_skip_list, random_player_index).is_some() {
-            found_matches += 1;
-        }
+        let _ = find_matching_player(&ordered_skip_list, random_player_index).is_some();
     }
-
-    println!(
-        "time to find {} matches: {}",
-        number_of_matches,
-        begin.elapsed().as_micros()
-    );
-    println!("found: {}", found_matches);
-    return begin.elapsed().as_micros()
+    return begin.elapsed().as_micros();
 }
